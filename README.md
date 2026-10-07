@@ -1,6 +1,6 @@
-# 3D Art Gallery
+# Native American Religions: A Virtual Exhibition
 
-A walk-through 3D art gallery built with [three.js](https://threejs.org/). The room has six framed artworks, each lit by its own spotlight and labelled with a wall placard.
+A walk-through 3D exhibition built with [three.js](https://threejs.org/) for the Indigenous Religions Project. It has two galleries joined by a doorway. Five artworks hang in them, each with a wall label giving its title, artist, date, description and source, plus an intro panel and a closing panel. Glowing arrows and numbered markers on the floor show the route, and a guided tour steps through every stop.
 
 ## Running it
 
@@ -19,22 +19,21 @@ It also works as-is on GitHub Pages. three.js is bundled in `vendor/`, so the ga
 | --- | --- | --- |
 | Look around | Click and drag | Drag |
 | Walk | `W` `A` `S` `D` or arrow keys | On-screen ↑ / ↓ buttons |
-| View an artwork | Click it | Tap it |
-| Next / previous artwork | Panel buttons or ← / → while viewing | Panel buttons |
-| Close the info panel | `Esc` or × | × |
+| Guided tour | "Start guided tour", then ← / → | "Start guided tour", then the arrow buttons |
+| View an artwork | Click it or its label | Tap it or its label |
+| Leave the tour | `Esc` or × | × |
 
-## Adding your artwork
+## Editing the exhibition
 
-1. Put your images in `images/`, named `artwork-1.jpg` through `artwork-6.jpg`. To use other names or formats such as `.png`, change the `image` paths in `js/artworks.js`.
-2. Edit the `title`, `artist`, `year` and `description` for each piece in `js/artworks.js`.
-
-An artwork without an image file shows a numbered placeholder. When you add the image, the frame resizes to match its aspect ratio.
+- Text and images for every stop are in `js/artworks.js`, listed in walking order.
+- Where each stop hangs (which wall, how far along it) is set by `STOP_LAYOUT` in `js/main.js`.
+- Artwork images are in `images/`.
 
 ## Files
 
-- `index.html`: page markup, overlays and the info panel
+- `index.html`: page markup, intro screen, tour bar and reader card
 - `css/style.css`: UI styling
-- `js/main.js`: the 3D scene (room, lighting, frames, controls, camera tour)
-- `js/artworks.js`: artwork titles, descriptions and image paths
+- `js/main.js`: the 3D scene (rooms, lighting, frames, wall labels, floor guide, controls, guided tour)
+- `js/artworks.js`: exhibition text, artwork details and image paths
 - `images/`: put your artwork images here
 - `vendor/three.min.js`: three.js r159 (MIT licence in `vendor/three-LICENSE.txt`)

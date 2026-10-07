@@ -1,5 +1,5 @@
 // Runs as a classic script after vendor/three.min.js (global THREE) and
-// js/artworks.js (ARTWORKS), so the site has no outside dependencies.
+// js/artworks.js (EXHIBITION, STOPS), so the site has no outside dependencies.
 (function () {
 if (!window.THREE) {
   galleryError('The 3D engine did not load. Please reload the page.');
@@ -7,28 +7,58 @@ if (!window.THREE) {
 }
 
 // ---------------------------------------------------------------------------
-// Configuration
+// Layout
 // ---------------------------------------------------------------------------
-const ROOM = { width: 24, depth: 16, height: 6 };
-const EYE_HEIGHT = 1.7;
-const WALK_SPEED = 4; // metres per second
-const WALL_MARGIN = 1.0; // how close the visitor can get to a wall
-const ART_MAX = { w: 3.4, h: 2.6 }; // largest size an artwork can be displayed at
-const ART_CENTER_Y = 2.3;
-const VIEW_DISTANCE = 4.2; // how far from an artwork the camera stops when viewing it
+// Two rooms in a line along -z, joined by a doorway in the dividing wall.
+//   Gallery I:  z from 0 to -ROOM_DEPTH
+//   Gallery II: z from -ROOM_DEPTH to -2 * ROOM_DEPTH
+const HW = 8; // half the room width
+const ROOM_DEPTH = 16;
+const WALL_H = 5.5;
+const DOOR_W = 3.2;
+const DOOR_H = 3.4;
+const DIVIDER_Z = -ROOM_DEPTH;
+const BACK_Z = -2 * ROOM_DEPTH;
 
-// Where each of the six artworks hangs: position on the wall and the wall's
-// inward-facing normal.
-const HW = ROOM.width / 2;
-const HD = ROOM.depth / 2;
-const PLACEMENTS = [
-  { pos: [-5.5, ART_CENTER_Y, -HD], normal: [0, 0, 1] },  // back wall, left
-  { pos: [5.5, ART_CENTER_Y, -HD], normal: [0, 0, 1] },   // back wall, right
-  { pos: [HW, ART_CENTER_Y, 0], normal: [-1, 0, 0] },     // right wall
-  { pos: [5.5, ART_CENTER_Y, HD], normal: [0, 0, -1] },   // front wall, right
-  { pos: [-5.5, ART_CENTER_Y, HD], normal: [0, 0, -1] },  // front wall, left
-  { pos: [-HW, ART_CENTER_Y, 0], normal: [1, 0, 0] },     // left wall
+const EYE_HEIGHT = 1.7;
+const WALK_SPEED = 4;
+const BODY_RADIUS = 0.6;
+const ART_MAX = { w: 2.6, h: 2.4 };
+const ART_CENTER_Y = 2.2;
+const FRAME = 0.1;
+const MATBOARD = 0.16;
+const LABEL_W = 1.5; // wall label beside each artwork
+const LABEL_GAP = 0.35;
+const TEXT_PANEL_W = 2.6; // intro / closing panels
+const STATION_DIST = 2.8; // floor marker distance from the wall
+const START = new THREE.Vector3(0, EYE_HEIGHT, -6.5);
+const START_YAW = Math.PI; // facing the intro panel on the entrance wall
+
+// Where each stop (in STOPS order) hangs. `along` is the position along the
+// wall of the artwork's centre (or the text panel's centre).
+const STOP_LAYOUT = [
+  { wall: 'front', along: 0 },     // intro panel on the entrance wall
+  { wall: 'left', along: -4.0 },   // Gallery I
+  { wall: 'left', along: -10.5 },
+  { wall: 'right', along: -12.5 },
+  { wall: 'left', along: -20.5 },  // Gallery II
+  { wall: 'right', along: -23.0 },
+  { wall: 'back', along: 0 },      // closing panel
 ];
+
+const BENCHES = [
+  { x: 0, z: -8.5 },
+  { x: 0, z: -25.5 },
+];
+
+function wallFrame(wall, along) {
+  // Returns the anchor point on the wall, its inward normal, and the
+  // direction "to the right" when facing the wall.
+  if (wall === 'left') return { pos: new THREE.Vector3(-HW, 0, along), normal: new THREE.Vector3(1, 0, 0) };
+  if (wall === 'right') return { pos: new THREE.Vector3(HW, 0, along), normal: new THREE.Vector3(-1, 0, 0) };
+  if (wall === 'front') return { pos: new THREE.Vector3(along, 0, 0), normal: new THREE.Vector3(0, 0, -1) };
+  return { pos: new THREE.Vector3(along, 0, BACK_Z), normal: new THREE.Vector3(0, 0, 1) };
+}
 
 // ---------------------------------------------------------------------------
 // Renderer, scene, camera
@@ -47,13 +77,13 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.1;
-renderer.shadowMap.enabled = !isTouch;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+const maxAniso = renderer.capabilities.getMaxAnisotropy();
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x1a1714);
 
 const camera = new THREE.PerspectiveCamera(65, window.innerWidth / window.innerHeight, 0.1, 100);
+camera.rotation.order = 'YXZ';
 
 // Keep a usable horizontal field of view on tall (portrait) screens
 function updateCameraFov() {
@@ -64,160 +94,288 @@ function updateCameraFov() {
   camera.updateProjectionMatrix();
 }
 updateCameraFov();
-camera.rotation.order = 'YXZ';
-const look = { yaw: 0, pitch: 0 };
-camera.position.set(0, EYE_HEIGHT, 4);
+
+const look = { yaw: START_YAW, pitch: 0 };
+camera.position.copy(START);
 
 // ---------------------------------------------------------------------------
-// Procedural textures
+// Canvas textures
 // ---------------------------------------------------------------------------
-function canvasTexture(width, height, draw, { repeat, srgb = true } = {}) {
+const SERIF = '"Cormorant Garamond", Georgia, "Times New Roman", serif';
+const SANS = 'Inter, "Helvetica Neue", Arial, sans-serif';
+
+function makeCanvas(w, h) {
   const c = document.createElement('canvas');
-  c.width = width;
-  c.height = height;
-  draw(c.getContext('2d'), width, height);
+  c.width = w;
+  c.height = h;
+  return c;
+}
+
+function toTexture(c, repeat) {
   const tex = new THREE.CanvasTexture(c);
-  if (srgb) tex.colorSpace = THREE.SRGBColorSpace;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = maxAniso;
   if (repeat) {
     tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
     tex.repeat.set(...repeat);
   }
-  tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
   return tex;
 }
 
 function woodFloorTexture() {
-  return canvasTexture(1024, 1024, (ctx, w, h) => {
-    const plankH = h / 8;
-    for (let row = 0; row < 8; row++) {
-      const offset = (row % 2) * (w / 3);
-      for (let x = -offset; x < w; x += w / 1.5) {
-        const shade = 95 + Math.random() * 25;
-        ctx.fillStyle = `rgb(${shade + 40}, ${shade + 10}, ${shade - 25})`;
-        ctx.fillRect(x, row * plankH, w / 1.5, plankH);
-        // grain
-        ctx.strokeStyle = 'rgba(60, 35, 15, 0.12)';
-        for (let g = 0; g < 14; g++) {
-          const gy = row * plankH + Math.random() * plankH;
-          ctx.beginPath();
-          ctx.moveTo(x, gy);
-          ctx.bezierCurveTo(x + w / 4, gy + 4, x + w / 2, gy - 4, x + w / 1.5, gy);
-          ctx.stroke();
-        }
-        ctx.fillStyle = 'rgba(30, 18, 8, 0.6)';
-        ctx.fillRect(x, row * plankH, 2, plankH);
+  const c = makeCanvas(1024, 1024);
+  const ctx = c.getContext('2d');
+  const w = 1024;
+  const plankH = w / 8;
+  for (let row = 0; row < 8; row++) {
+    const offset = (row % 2) * (w / 3);
+    for (let x = -offset; x < w; x += w / 1.5) {
+      const shade = 95 + Math.random() * 25;
+      ctx.fillStyle = `rgb(${shade + 40}, ${shade + 10}, ${shade - 25})`;
+      ctx.fillRect(x, row * plankH, w / 1.5, plankH);
+      ctx.strokeStyle = 'rgba(60, 35, 15, 0.12)';
+      for (let g = 0; g < 14; g++) {
+        const gy = row * plankH + Math.random() * plankH;
+        ctx.beginPath();
+        ctx.moveTo(x, gy);
+        ctx.bezierCurveTo(x + w / 4, gy + 4, x + w / 2, gy - 4, x + w / 1.5, gy);
+        ctx.stroke();
       }
       ctx.fillStyle = 'rgba(30, 18, 8, 0.6)';
-      ctx.fillRect(0, row * plankH, w, 2);
+      ctx.fillRect(x, row * plankH, 2, plankH);
     }
-  }, { repeat: [4, 4] });
+    ctx.fillStyle = 'rgba(30, 18, 8, 0.6)';
+    ctx.fillRect(0, row * plankH, w, 2);
+  }
+  return toTexture(c, [4, 8]);
 }
 
-// Placeholder shown until the real image file exists.
-function placeholderTexture(index, art) {
-  const hue = (index * 57 + 20) % 360;
-  return canvasTexture(1024, 768, (ctx, w, h) => {
-    const grad = ctx.createLinearGradient(0, 0, w, h);
-    grad.addColorStop(0, `hsl(${hue}, 35%, 32%)`);
-    grad.addColorStop(1, `hsl(${(hue + 40) % 360}, 40%, 18%)`);
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, w, h);
-
-    // soft decorative circles
-    for (let i = 0; i < 6; i++) {
-      ctx.beginPath();
-      ctx.arc(Math.random() * w, Math.random() * h, 80 + Math.random() * 220, 0, Math.PI * 2);
-      ctx.fillStyle = `hsla(${(hue + i * 25) % 360}, 45%, 60%, 0.08)`;
-      ctx.fill();
-    }
-
-    ctx.strokeStyle = 'rgba(255,255,255,0.35)';
-    ctx.lineWidth = 3;
-    ctx.setLineDash([18, 12]);
-    ctx.strokeRect(40, 40, w - 80, h - 80);
-    ctx.setLineDash([]);
-
-    ctx.textAlign = 'center';
-    ctx.fillStyle = 'rgba(255,255,255,0.9)';
-    ctx.font = '600 120px "Cormorant Garamond", Georgia, serif';
-    ctx.fillText(String(index + 1).padStart(2, '0'), w / 2, h / 2 - 20);
-    ctx.font = '500 44px Inter, sans-serif';
-    ctx.fillText(art.title, w / 2, h / 2 + 60);
-    ctx.font = '400 28px Inter, sans-serif';
-    ctx.fillStyle = 'rgba(255,255,255,0.6)';
-    ctx.fillText('Image coming soon', w / 2, h / 2 + 110);
-  });
+function placeholderTexture(stop) {
+  const c = makeCanvas(768, 1024);
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#3a3129';
+  ctx.fillRect(0, 0, 768, 1024);
+  ctx.fillStyle = 'rgba(255,255,255,0.7)';
+  ctx.textAlign = 'center';
+  ctx.font = `500 40px ${SANS}`;
+  ctx.fillText('Loading image…', 384, 512);
+  return toTexture(c);
 }
 
-function placardTexture(index, art) {
-  return canvasTexture(512, 256, (ctx, w, h) => {
-    ctx.fillStyle = '#f7f4ee';
-    ctx.fillRect(0, 0, w, h);
-    ctx.fillStyle = '#1d1a16';
-    ctx.font = '600 52px "Cormorant Garamond", Georgia, serif';
-    ctx.fillText(art.title, 32, 84, w - 64);
-    ctx.fillStyle = '#6f675c';
-    ctx.font = '400 28px Inter, sans-serif';
-    ctx.fillText(`${art.artist}, ${art.year}`, 32, 136, w - 64);
-    ctx.fillStyle = '#b08d57';
-    ctx.font = '500 22px Inter, sans-serif';
-    ctx.fillText(`No. ${index + 1}`, 32, 206);
+function wrapLines(ctx, text, maxW) {
+  const words = String(text).split(/\s+/).filter(Boolean);
+  const lines = [];
+  let line = '';
+  for (const word of words) {
+    const test = line ? `${line} ${word}` : word;
+    if (ctx.measureText(test).width > maxW && line) {
+      lines.push(line);
+      line = word;
+    } else {
+      line = test;
+    }
+  }
+  if (line) lines.push(line);
+  return lines;
+}
+
+// Lays out blocks of text on a panel-sized canvas. Each block is
+// { text, font, color, lh, gap } or { rule: true, gap }.
+function textPanelCanvas(blocks, widthPx, { pad = 72, bg = '#f7f4ee', accent = '#8a5a2b' } = {}) {
+  const maxW = widthPx - pad * 2;
+  const measure = makeCanvas(8, 8).getContext('2d');
+  let height = pad;
+  const laid = blocks.map((b) => {
+    if (b.rule) {
+      const item = { rule: true, y: height };
+      height += 4 + (b.gap || 0);
+      return item;
+    }
+    measure.font = b.font;
+    const lines = wrapLines(measure, b.text, maxW);
+    const item = { ...b, lines, y: height };
+    height += lines.length * b.lh + (b.gap || 0);
+    return item;
   });
+  height += pad - 10;
+
+  const c = makeCanvas(widthPx, Math.ceil(height));
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, c.width, c.height);
+  ctx.fillStyle = accent;
+  ctx.fillRect(0, 0, c.width, 10);
+  ctx.textBaseline = 'top';
+  for (const item of laid) {
+    if (item.rule) {
+      ctx.fillStyle = '#d6cbbb';
+      ctx.fillRect(pad, item.y, 120, 4);
+      continue;
+    }
+    ctx.font = item.font;
+    ctx.fillStyle = item.color;
+    item.lines.forEach((line, i) => ctx.fillText(line, pad, item.y + i * item.lh));
+  }
+  return c;
+}
+
+function labelBlocks(stop, number) {
+  const meta = [stop.artist, stop.date].filter(Boolean).join(', ');
+  return [
+    { text: `NO. ${number}  ·  ${EXHIBITION.rooms[stop.room].toUpperCase()}`, font: `600 24px ${SANS}`, color: '#8a5a2b', lh: 34, gap: 18 },
+    { text: stop.title, font: `600 66px ${SERIF}`, color: '#1d1a16', lh: 68, gap: 18 },
+    { text: meta, font: `500 30px ${SANS}`, color: '#4a4239', lh: 40, gap: 6 },
+    { text: stop.medium, font: `400 24px ${SANS}`, color: '#7a7064', lh: 33, gap: 30 },
+    { rule: true, gap: 30 },
+    { text: stop.description, font: `400 31px ${SANS}`, color: '#2a251f', lh: 46, gap: 30 },
+    { text: `Source: ${stop.source}`, font: `400 21px ${SANS}`, color: '#7a7064', lh: 30, gap: 0 },
+  ];
+}
+
+function textStopBlocks(stop) {
+  const blocks = [
+    { text: stop.eyebrow.toUpperCase(), font: `600 26px ${SANS}`, color: '#8a5a2b', lh: 36, gap: 14 },
+    { text: stop.title, font: `600 92px ${SERIF}`, color: '#1d1a16', lh: 92, gap: 26 },
+  ];
+  if (stop.subtitle) blocks.push({ text: stop.subtitle, font: `italic 500 46px ${SERIF}`, color: '#4a4239', lh: 54, gap: 34 });
+  blocks.push({ rule: true, gap: 34 });
+  stop.body.forEach((p) => blocks.push({ text: p, font: `400 32px ${SANS}`, color: '#2a251f', lh: 48, gap: 26 }));
+  blocks.push({ text: `Source: ${stop.source}`, font: `400 22px ${SANS}`, color: '#7a7064', lh: 32, gap: 0 });
+  return blocks;
+}
+
+function signCanvas(lines, { w = 1024, h = 256 } = {}) {
+  const c = makeCanvas(w, h);
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#2b241d';
+  ctx.fillRect(0, 0, w, h);
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#c9a46a';
+  ctx.font = `600 30px ${SANS}`;
+  ctx.fillText(lines[0], w / 2, h * 0.32);
+  ctx.fillStyle = '#f7f4ee';
+  ctx.font = `600 72px ${SERIF}`;
+  ctx.fillText(lines[1], w / 2, h * 0.66);
+  return c;
 }
 
 // ---------------------------------------------------------------------------
 // Room
 // ---------------------------------------------------------------------------
-function buildRoom() {
-  const wallMat = new THREE.MeshStandardMaterial({ color: 0xece6dc, roughness: 0.95 });
-  const floorMat = new THREE.MeshStandardMaterial({ map: woodFloorTexture(), roughness: 0.55, metalness: 0.05 });
-  const ceilMat = new THREE.MeshStandardMaterial({ color: 0xf4f1ec, roughness: 1 });
-  const trimMat = new THREE.MeshStandardMaterial({ color: 0x3a332b, roughness: 0.6 });
+const wallMat = new THREE.MeshStandardMaterial({ color: 0xece4d6, roughness: 0.95 });
+const trimMat = new THREE.MeshStandardMaterial({ color: 0x3a332b, roughness: 0.6 });
 
-  const floor = new THREE.Mesh(new THREE.PlaneGeometry(ROOM.width, ROOM.depth), floorMat);
+function addWall(width, height, x, y, z, ry, material = wallMat) {
+  const wall = new THREE.Mesh(new THREE.PlaneGeometry(width, height), material);
+  wall.position.set(x, y, z);
+  wall.rotation.y = ry;
+  scene.add(wall);
+  return wall;
+}
+
+function addBaseboard(width, x, z, ry) {
+  const base = new THREE.Mesh(new THREE.BoxGeometry(width, 0.18, 0.04), trimMat);
+  base.position.set(x, 0.09, z);
+  base.rotation.y = ry;
+  base.translateZ(0.02);
+  scene.add(base);
+}
+
+function buildRooms() {
+  const totalDepth = ROOM_DEPTH * 2;
+  const midZ = -ROOM_DEPTH;
+
+  const floor = new THREE.Mesh(
+    new THREE.PlaneGeometry(HW * 2, totalDepth),
+    new THREE.MeshStandardMaterial({ map: woodFloorTexture(), roughness: 0.55, metalness: 0.05 }),
+  );
   floor.rotation.x = -Math.PI / 2;
-  floor.receiveShadow = true;
+  floor.position.z = midZ;
   scene.add(floor);
 
-  const ceiling = new THREE.Mesh(new THREE.PlaneGeometry(ROOM.width, ROOM.depth), ceilMat);
+  const ceiling = new THREE.Mesh(
+    new THREE.PlaneGeometry(HW * 2, totalDepth),
+    new THREE.MeshStandardMaterial({ color: 0xf4f1ec, roughness: 1 }),
+  );
   ceiling.rotation.x = Math.PI / 2;
-  ceiling.position.y = ROOM.height;
+  ceiling.position.set(0, WALL_H, midZ);
   scene.add(ceiling);
 
-  // Walls: [width, x, z, rotationY]
-  const walls = [
-    [ROOM.width, 0, -HD, 0],
-    [ROOM.width, 0, HD, Math.PI],
-    [ROOM.depth, -HW, 0, Math.PI / 2],
-    [ROOM.depth, HW, 0, -Math.PI / 2],
-  ];
-  for (const [w, x, z, ry] of walls) {
-    const wall = new THREE.Mesh(new THREE.PlaneGeometry(w, ROOM.height), wallMat);
-    wall.position.set(x, ROOM.height / 2, z);
-    wall.rotation.y = ry;
-    wall.receiveShadow = true;
-    scene.add(wall);
+  // Outer walls
+  addWall(totalDepth, WALL_H, -HW, WALL_H / 2, midZ, Math.PI / 2);
+  addWall(totalDepth, WALL_H, HW, WALL_H / 2, midZ, -Math.PI / 2);
+  addWall(HW * 2, WALL_H, 0, WALL_H / 2, 0, Math.PI);
+  addWall(HW * 2, WALL_H, 0, WALL_H / 2, BACK_Z, 0);
+  addBaseboard(totalDepth, -HW, midZ, Math.PI / 2);
+  addBaseboard(totalDepth, HW, midZ, -Math.PI / 2);
+  addBaseboard(HW * 2, 0, 0, Math.PI);
+  addBaseboard(HW * 2, 0, BACK_Z, 0);
 
-    const base = new THREE.Mesh(new THREE.BoxGeometry(w, 0.18, 0.04), trimMat);
-    base.position.set(x, 0.09, z);
-    base.rotation.y = ry;
-    base.translateZ(0.02);
-    scene.add(base);
+  // Dividing wall with a doorway (a thick box on each side, plus a lintel)
+  const thickness = 0.3;
+  const sideW = HW - DOOR_W / 2;
+  for (const sign of [-1, 1]) {
+    const seg = new THREE.Mesh(new THREE.BoxGeometry(sideW, WALL_H, thickness), wallMat);
+    seg.position.set(sign * (DOOR_W / 2 + sideW / 2), WALL_H / 2, DIVIDER_Z);
+    scene.add(seg);
+    for (const face of [-1, 1]) {
+      const base = new THREE.Mesh(new THREE.BoxGeometry(sideW, 0.18, 0.04), trimMat);
+      base.position.set(seg.position.x, 0.09, DIVIDER_Z + face * (thickness / 2 + 0.02));
+      scene.add(base);
+    }
+  }
+  const lintel = new THREE.Mesh(new THREE.BoxGeometry(DOOR_W, WALL_H - DOOR_H, thickness), wallMat);
+  lintel.position.set(0, DOOR_H + (WALL_H - DOOR_H) / 2, DIVIDER_Z);
+  scene.add(lintel);
+  // Door frame
+  const frameMatDark = new THREE.MeshStandardMaterial({ color: 0x2b241d, roughness: 0.5 });
+  for (const sign of [-1, 1]) {
+    const jamb = new THREE.Mesh(new THREE.BoxGeometry(0.12, DOOR_H, thickness + 0.08), frameMatDark);
+    jamb.position.set(sign * (DOOR_W / 2 + 0.06), DOOR_H / 2, DIVIDER_Z);
+    scene.add(jamb);
+  }
+  const head = new THREE.Mesh(new THREE.BoxGeometry(DOOR_W + 0.24, 0.12, thickness + 0.08), frameMatDark);
+  head.position.set(0, DOOR_H + 0.06, DIVIDER_Z);
+  scene.add(head);
+
+  // Signs above the doorway on both sides
+  const signs = [
+    { lines: ['CONTINUE TO', EXHIBITION.rooms[1]], z: DIVIDER_Z + thickness / 2 + 0.01, ry: 0 },
+    { lines: ['BACK TO', EXHIBITION.rooms[0]], z: DIVIDER_Z - thickness / 2 - 0.01, ry: Math.PI },
+  ];
+  for (const s of signs) {
+    const sign = new THREE.Mesh(
+      new THREE.PlaneGeometry(3.6, 0.9),
+      new THREE.MeshStandardMaterial({ map: toTexture(signCanvas(s.lines)), roughness: 0.8 }),
+    );
+    sign.position.set(0, DOOR_H + 0.9, s.z);
+    sign.rotation.y = s.ry;
+    scene.add(sign);
   }
 
-  // Skylight panels in the ceiling
+  // Room title on the entrance wall area of Gallery I is the intro panel;
+  // Gallery II gets a title sign above the closing panel.
+  const g2 = new THREE.Mesh(
+    new THREE.PlaneGeometry(4.4, 1.1),
+    new THREE.MeshStandardMaterial({ map: toTexture(signCanvas(['GALLERY II', 'Traditional Healing'])), roughness: 0.8 }),
+  );
+  g2.position.set(0, WALL_H - 0.75, BACK_Z + 0.02);
+  scene.add(g2);
+
+  // Skylights
   const panelMat = new THREE.MeshBasicMaterial({ color: 0xfffaf0 });
-  for (const x of [-6, 0, 6]) {
-    const panel = new THREE.Mesh(new THREE.PlaneGeometry(3, 1.2), panelMat);
+  for (const z of [-5, -11, -21, -27]) {
+    const panel = new THREE.Mesh(new THREE.PlaneGeometry(4, 1.4), panelMat);
     panel.rotation.x = Math.PI / 2;
-    panel.position.set(x, ROOM.height - 0.01, 0);
+    panel.position.set(0, WALL_H - 0.01, z);
     scene.add(panel);
   }
 
-  // A pair of benches in the middle of the room
+  // Benches
   const benchMat = new THREE.MeshStandardMaterial({ color: 0x2b2520, roughness: 0.5 });
   const cushionMat = new THREE.MeshStandardMaterial({ color: 0x6b5a48, roughness: 0.9 });
-  for (const x of [-3, 3]) {
+  for (const b of BENCHES) {
     const bench = new THREE.Group();
     const top = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.12, 0.6), cushionMat);
     top.position.y = 0.46;
@@ -227,31 +385,29 @@ function buildRoom() {
       leg.position.set(lx, 0.2, 0);
       bench.add(leg);
     }
-    bench.traverse((m) => { m.castShadow = true; m.receiveShadow = true; });
-    bench.position.set(x, 0, 0);
+    bench.position.set(b.x, 0, b.z);
     scene.add(bench);
   }
 }
 
-// ---------------------------------------------------------------------------
-// Lighting
-// ---------------------------------------------------------------------------
 function buildLights() {
   scene.add(new THREE.HemisphereLight(0xfff8ee, 0xa8977f, 1.0));
-  const fill = new THREE.PointLight(0xfff2e0, 18, 0, 1.6);
-  fill.position.set(0, ROOM.height - 0.5, 0);
-  scene.add(fill);
+  for (const z of [-8, -24]) {
+    const fill = new THREE.PointLight(0xfff2e0, 16, 0, 1.6);
+    fill.position.set(0, WALL_H - 0.5, z);
+    scene.add(fill);
+  }
 }
 
 // ---------------------------------------------------------------------------
-// Artworks
+// Stops: artworks with labels, and text panels
 // ---------------------------------------------------------------------------
 const frameMat = new THREE.MeshStandardMaterial({ color: 0x1f1a15, roughness: 0.4, metalness: 0.2 });
 const matboardMat = new THREE.MeshStandardMaterial({ color: 0xfbf9f4, roughness: 0.9 });
-const FRAME = 0.1;
-const MATBOARD = 0.18;
+const fixtureMat = new THREE.MeshStandardMaterial({ color: 0x222222, metalness: 0.6, roughness: 0.4 });
 
-const pieces = []; // { group, canvas, frame, mat, light, index, normal }
+const stops = []; // runtime data per stop
+const clickable = [];
 
 function fitSize(aspect) {
   let w = ART_MAX.w;
@@ -263,104 +419,401 @@ function fitSize(aspect) {
   return { w, h };
 }
 
-function setPieceSize(piece, aspect) {
-  const { w, h } = fitSize(aspect);
-  piece.width = w + (MATBOARD + FRAME) * 2;
-  piece.canvas.scale.set(w, h, 1);
-  piece.mat.scale.set(w + MATBOARD * 2, h + MATBOARD * 2, 1);
-  piece.frame.scale.set(w + (MATBOARD + FRAME) * 2, h + (MATBOARD + FRAME) * 2, 1);
-  piece.placard.position.set(w / 2 + MATBOARD + FRAME + 0.5, -0.4, 0.01);
+function addPanelMesh(group, canvasEl, widthM, x, y, index) {
+  const heightM = widthM * (canvasEl.height / canvasEl.width);
+  const backing = new THREE.Mesh(new THREE.BoxGeometry(widthM + 0.04, heightM + 0.04, 0.04), frameMat);
+  backing.position.set(x, y, 0.02);
+  group.add(backing);
+  const panel = new THREE.Mesh(
+    new THREE.PlaneGeometry(widthM, heightM),
+    new THREE.MeshStandardMaterial({ map: toTexture(canvasEl), roughness: 0.9 }),
+  );
+  panel.position.set(x, y, 0.042);
+  panel.userData.stop = index;
+  group.add(panel);
+  clickable.push(panel);
+  return { panel, heightM };
 }
 
-function buildArtwork(art, index) {
-  const { pos, normal } = PLACEMENTS[index];
-  const n = new THREE.Vector3(...normal);
+function addSpot(target, normal, angle) {
+  const light = new THREE.SpotLight(0xfff1dc, 55, 0, angle, 0.6, 1.4);
+  light.position.copy(target).add(normal.clone().multiplyScalar(2.6));
+  light.position.y = WALL_H - 0.2;
+  light.target.position.copy(target);
+  scene.add(light, light.target);
+  const fixture = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.1, 0.25, 16), fixtureMat);
+  fixture.position.copy(light.position);
+  fixture.lookAt(target);
+  fixture.rotateX(Math.PI / 2);
+  scene.add(fixture);
+  return light;
+}
+
+// Unit = everything hung for one stop. `focus` is the centre of the unit on
+// the wall, used for the floor marker, spotlight and camera framing.
+function updateArtUnit(s, aspect) {
+  const { w, h } = fitSize(aspect);
+  const frameW = w + (MATBOARD + FRAME) * 2;
+  const frameH = h + (MATBOARD + FRAME) * 2;
+  s.canvasMesh.scale.set(w, h, 1);
+  s.mat.scale.set(w + MATBOARD * 2, h + MATBOARD * 2, 1);
+  s.frame.scale.set(frameW, frameH, 1);
+
+  const labelX = frameW / 2 + LABEL_GAP + LABEL_W / 2;
+  const top = ART_CENTER_Y + frameH / 2;
+  const labelY = Math.max(top - s.labelH / 2, s.labelH / 2 + 0.45);
+  s.label.position.set(labelX, labelY, 0);
+
+  s.unitWidth = frameW + LABEL_GAP + LABEL_W;
+  s.unitCenterX = (-frameW / 2 + labelX + LABEL_W / 2) / 2;
+  refreshFocus(s);
+}
+
+function refreshFocus(s) {
+  s.group.updateMatrixWorld(true);
+  s.focus = new THREE.Vector3(s.unitCenterX, ART_CENTER_Y, 0).applyMatrix4(s.group.matrixWorld);
+  if (s.light) s.light.target.position.copy(s.focus);
+}
+
+function buildStop(stop, index) {
+  const layout = STOP_LAYOUT[index];
+  const { pos, normal } = wallFrame(layout.wall, layout.along);
   const group = new THREE.Group();
-  group.position.set(...pos);
-  group.lookAt(group.position.clone().add(n));
+  group.position.copy(pos);
+  group.lookAt(pos.clone().add(normal));
   scene.add(group);
+  const s = { stop, index, group, normal, room: stop.room };
+  stops.push(s);
+
+  if (stop.type === 'text') {
+    const c = textPanelCanvas(textStopBlocks(stop), 1200, { pad: 90 });
+    const heightM = TEXT_PANEL_W * (c.height / c.width);
+    const y = Math.max(2.5, heightM / 2 + 0.5);
+    addPanelMesh(group, c, TEXT_PANEL_W, 0, y, index);
+    s.unitWidth = TEXT_PANEL_W;
+    s.unitCenterX = 0;
+    s.focusY = y;
+    refreshFocus(s);
+    s.focus.y = y;
+    s.light = addSpot(s.focus, normal, 0.5);
+    return;
+  }
 
   const frame = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 0.08), frameMat);
   frame.position.z = 0.04;
-  frame.castShadow = true;
   group.add(frame);
-
   const mat = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), matboardMat);
   mat.position.z = 0.081;
   group.add(mat);
-
-  const artMat = new THREE.MeshStandardMaterial({ map: placeholderTexture(index, art), roughness: 0.8 });
+  const artMat = new THREE.MeshStandardMaterial({ map: placeholderTexture(stop), roughness: 0.8 });
   const canvasMesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), artMat);
-  canvasMesh.position.z = 0.083;
-  canvasMesh.userData.index = index;
+  canvasMesh.position.set(0, ART_CENTER_Y, 0.083);
+  frame.position.y = ART_CENTER_Y;
+  mat.position.y = ART_CENTER_Y;
+  canvasMesh.userData.stop = index;
   group.add(canvasMesh);
+  clickable.push(canvasMesh);
 
-  const placard = new THREE.Mesh(
-    new THREE.PlaneGeometry(0.5, 0.25),
-    new THREE.MeshStandardMaterial({ map: placardTexture(index, art), roughness: 0.9 }),
-  );
-  group.add(placard);
+  const number = STOPS.slice(0, index + 1).filter((x) => x.type === 'art').length;
+  s.number = number;
+  const labelCanvas = textPanelCanvas(labelBlocks(stop, number), 900, { pad: 64 });
+  const labelGroup = new THREE.Group();
+  const { heightM } = addPanelMesh(labelGroup, labelCanvas, LABEL_W, 0, 0, index);
+  group.add(labelGroup);
 
-  // Spotlight from the ceiling, aimed at the artwork
-  const light = new THREE.SpotLight(0xfff1dc, 60, 0, 0.42, 0.55, 1.4);
-  light.position.copy(group.position).add(n.clone().multiplyScalar(2.6));
-  light.position.y = ROOM.height - 0.2;
-  light.target.position.copy(group.position);
-  light.castShadow = true;
-  light.shadow.mapSize.set(512, 512);
-  light.shadow.bias = -0.0005;
-  scene.add(light, light.target);
+  Object.assign(s, { frame, mat, canvasMesh, label: labelGroup, labelH: heightM });
+  updateArtUnit(s, 3 / 4);
+  s.light = addSpot(s.focus, normal, 0.62);
 
-  // Small track-light fixture
-  const fixture = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.07, 0.1, 0.25, 16),
-    new THREE.MeshStandardMaterial({ color: 0x222222, metalness: 0.6, roughness: 0.4 }),
-  );
-  fixture.position.copy(light.position);
-  fixture.lookAt(group.position);
-  fixture.rotateX(Math.PI / 2);
-  scene.add(fixture);
-
-  const piece = { group, canvas: canvasMesh, frame, mat, placard, light, index, normal: n, width: 0 };
-  pieces.push(piece);
-  setPieceSize(piece, 4 / 3);
-
-  // Try to load the real image; keep the placeholder if it isn't there yet.
   new THREE.TextureLoader().load(
-    art.image,
+    stop.image,
     (tex) => {
       tex.colorSpace = THREE.SRGBColorSpace;
-      tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+      tex.anisotropy = maxAniso;
       artMat.map.dispose();
       artMat.map = tex;
       artMat.needsUpdate = true;
-      setPieceSize(piece, tex.image.width / tex.image.height);
+      updateArtUnit(s, tex.image.width / tex.image.height);
+      buildFloorGuide();
     },
     undefined,
-    () => { /* image not added yet — placeholder stays */ },
+    () => { /* keep placeholder */ },
   );
 }
 
 // ---------------------------------------------------------------------------
-// Controls: drag to look, WASD / arrows to walk, click artwork to view
+// Floor guide: arrows along the route and a marker in front of each stop
+// ---------------------------------------------------------------------------
+function arrowTexture() {
+  const c = makeCanvas(256, 256);
+  const ctx = c.getContext('2d');
+  ctx.strokeStyle = '#ffd890';
+  ctx.lineWidth = 34;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.beginPath();
+  ctx.moveTo(48, 168);
+  ctx.lineTo(128, 88);
+  ctx.lineTo(208, 168);
+  ctx.stroke();
+  return toTexture(c);
+}
+
+function markerTexture(text, small) {
+  const c = makeCanvas(256, 256);
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = 'rgba(43, 36, 29, 0.85)';
+  ctx.beginPath();
+  ctx.arc(128, 128, 120, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = '#ffd890';
+  ctx.lineWidth = 10;
+  ctx.stroke();
+  ctx.fillStyle = '#ffd890';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = small ? `600 54px ${SANS}` : `600 120px ${SERIF}`;
+  ctx.fillText(text, 128, small ? 128 : 136);
+  return toTexture(c);
+}
+
+const guide = new THREE.Group();
+scene.add(guide);
+const arrowTex = arrowTexture();
+let arrows = [];
+
+function floorPlane(size, tex, opacity = 1) {
+  const geo = new THREE.PlaneGeometry(size, size);
+  geo.rotateX(-Math.PI / 2); // texture "up" now points along -z
+  const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, opacity, depthWrite: false });
+  return new THREE.Mesh(geo, mat);
+}
+
+function yawToward(dx, dz) {
+  return Math.atan2(-dx, -dz);
+}
+
+function stationPoint(s) {
+  return s.focus.clone().setY(0).add(s.normal.clone().multiplyScalar(STATION_DIST));
+}
+
+function routePoints() {
+  const pts = [];
+  stops.forEach((s, i) => {
+    if (i > 0 && stops[i - 1].room !== s.room) {
+      pts.push(new THREE.Vector3(0, 0, DIVIDER_Z + 1.6));
+      pts.push(new THREE.Vector3(0, 0, DIVIDER_Z - 1.6));
+    }
+    pts.push(stationPoint(s));
+  });
+  return pts;
+}
+
+function buildFloorGuide() {
+  if (stops.length !== STOPS.length) return;
+  guide.clear();
+  arrows = [];
+  const pts = routePoints();
+  const stationSet = stops.map(stationPoint);
+  let travelled = 0;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const a = pts[i];
+    const b = pts[i + 1];
+    const len = a.distanceTo(b);
+    const dir = b.clone().sub(a).normalize();
+    for (let d = 0.9; d < len - 0.6; d += 1.0) {
+      const p = a.clone().addScaledVector(dir, d);
+      if (stationSet.some((st) => st.distanceTo(p) < 0.9)) continue;
+      const arrow = floorPlane(0.55, arrowTex, 0.8);
+      arrow.position.set(p.x, 0.012, p.z);
+      arrow.rotation.y = yawToward(dir.x, dir.z);
+      arrow.userData.phase = travelled + d;
+      guide.add(arrow);
+      arrows.push(arrow);
+    }
+    travelled += len;
+  }
+  stops.forEach((s, i) => {
+    const label = s.stop.type === 'art' ? String(s.number) : i === 0 ? 'START' : 'END';
+    const marker = floorPlane(0.95, markerTexture(label, s.stop.type !== 'art'), 0.95);
+    const p = stationSet[i];
+    marker.position.set(p.x, 0.014, p.z);
+    marker.rotation.y = yawToward(-s.normal.x, -s.normal.z);
+    marker.userData.stop = i;
+    guide.add(marker);
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Movement and collisions
+// ---------------------------------------------------------------------------
+function blocked(x, z) {
+  const r = BODY_RADIUS;
+  if (x < -HW + r || x > HW - r || z > -r || z < BACK_Z + r) return true;
+  if (Math.abs(z - DIVIDER_Z) < r + 0.15 && Math.abs(x) > DOOR_W / 2 - 0.35) return true;
+  for (const b of BENCHES) {
+    if (Math.abs(x - b.x) < 1.2 + r * 0.6 && Math.abs(z - b.z) < 0.3 + r * 0.6) return true;
+  }
+  return false;
+}
+
+function tryMove(dx, dz) {
+  const p = camera.position;
+  if (!blocked(p.x + dx, p.z + dz)) { p.x += dx; p.z += dz; return; }
+  if (!blocked(p.x + dx, p.z)) { p.x += dx; return; }
+  if (!blocked(p.x, p.z + dz)) p.z += dz;
+}
+
+// ---------------------------------------------------------------------------
+// Guided tour (camera flights between stops)
+// ---------------------------------------------------------------------------
+let flight = null;
+let current = -1;
+
+function shortestAngle(from, to) {
+  return from + Math.atan2(Math.sin(to - from), Math.cos(to - from));
+}
+
+function roomOf(z) {
+  return z < DIVIDER_Z ? 1 : 0;
+}
+
+function viewPoint(s) {
+  const halfHFov = Math.atan(Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2) * camera.aspect);
+  const halfVFov = THREE.MathUtils.degToRad(camera.fov) / 2;
+  const tall = s.stop.type === 'text' ? 3.4 : 3.2;
+  let dist = Math.max((s.unitWidth * 0.62) / Math.tan(halfHFov), (tall * 0.62) / Math.tan(halfVFov), 3.2);
+  dist = Math.min(dist, HW * 2 - 1.2);
+  const p = s.focus.clone().add(s.normal.clone().multiplyScalar(dist));
+  p.y = EYE_HEIGHT;
+  const yaw = Math.atan2(s.normal.x, s.normal.z);
+  const pitch = Math.atan2(s.focus.y - EYE_HEIGHT, dist);
+  return { p, yaw, pitch };
+}
+
+function goTo(index) {
+  index = (index + stops.length) % stops.length;
+  const s = stops[index];
+  const { p, yaw, pitch } = viewPoint(s);
+  const path = [camera.position.clone()];
+  if (roomOf(camera.position.z) !== s.room) {
+    // go through the doorway instead of through the wall
+    const enterSide = s.room === 1 ? 1 : -1;
+    path.push(new THREE.Vector3(0, EYE_HEIGHT, DIVIDER_Z + enterSide * 1.8));
+    path.push(new THREE.Vector3(0, EYE_HEIGHT, DIVIDER_Z - enterSide * 1.8));
+  }
+  path.push(p);
+  const lengths = [];
+  let total = 0;
+  for (let i = 0; i < path.length - 1; i++) {
+    const l = path[i].distanceTo(path[i + 1]);
+    lengths.push(l);
+    total += l;
+  }
+  flight = {
+    t: 0,
+    duration: THREE.MathUtils.clamp(total / 6, 1.1, 3.2),
+    path, lengths, total,
+    fromYaw: look.yaw,
+    toYaw: shortestAngle(look.yaw, yaw),
+    fromPitch: look.pitch,
+    toPitch: pitch,
+  };
+  current = index;
+  showTourBar(index);
+}
+
+function pointOnPath(f, k) {
+  let d = k * f.total;
+  for (let i = 0; i < f.lengths.length; i++) {
+    if (d <= f.lengths[i] || i === f.lengths.length - 1) {
+      const t = f.lengths[i] ? Math.min(d / f.lengths[i], 1) : 1;
+      return f.path[i].clone().lerp(f.path[i + 1], t);
+    }
+    d -= f.lengths[i];
+  }
+  return f.path[f.path.length - 1].clone();
+}
+
+// ---------------------------------------------------------------------------
+// UI: tour bar and reader card
+// ---------------------------------------------------------------------------
+const tourbar = document.getElementById('tourbar');
+const reader = document.getElementById('reader');
+
+function stopTitle(s) {
+  return s.stop.type === 'art' ? `${s.number}. ${s.stop.title}` : s.stop.title;
+}
+
+function showTourBar(index) {
+  const s = stops[index];
+  document.getElementById('tour-step').textContent = `Stop ${index + 1} of ${stops.length} · ${EXHIBITION.rooms[s.room]}`;
+  document.getElementById('tour-title').textContent = stopTitle(s);
+  tourbar.classList.add('open');
+  if (reader.classList.contains('open')) fillReader(index);
+}
+
+function hideTourBar() {
+  current = -1;
+  tourbar.classList.remove('open');
+  closeReader();
+}
+
+function fillReader(index) {
+  const st = stops[index].stop;
+  document.getElementById('reader-eyebrow').textContent = st.type === 'art'
+    ? `No. ${stops[index].number} · ${EXHIBITION.rooms[st.room]}`
+    : st.eyebrow;
+  document.getElementById('reader-title').textContent = st.title;
+  const meta = st.type === 'art' ? [st.artist, st.date].filter(Boolean).join(', ') : st.subtitle;
+  document.getElementById('reader-meta').textContent = meta || '';
+  document.getElementById('reader-medium').textContent = st.type === 'art' ? st.medium : '';
+  const body = document.getElementById('reader-body');
+  body.replaceChildren();
+  (st.type === 'art' ? [st.description] : st.body).forEach((t) => {
+    const p = document.createElement('p');
+    p.textContent = t;
+    body.appendChild(p);
+  });
+  document.getElementById('reader-source').textContent = `Source: ${st.source}`;
+}
+
+function openReader() {
+  if (current === -1) return;
+  fillReader(current);
+  reader.classList.add('open');
+  reader.setAttribute('aria-hidden', 'false');
+}
+
+function closeReader() {
+  reader.classList.remove('open');
+  reader.setAttribute('aria-hidden', 'true');
+}
+
+document.getElementById('tour-prev').addEventListener('click', () => goTo(current - 1));
+document.getElementById('tour-next').addEventListener('click', () => goTo(current + 1));
+document.getElementById('tour-read').addEventListener('click', () => (reader.classList.contains('open') ? closeReader() : openReader()));
+document.getElementById('tour-close').addEventListener('click', hideTourBar);
+document.getElementById('reader-close').addEventListener('click', closeReader);
+
+// ---------------------------------------------------------------------------
+// Input
 // ---------------------------------------------------------------------------
 const keys = new Set();
 const touchMove = { forward: false, back: false };
 let dragging = false;
 let dragDistance = 0;
 let lastPointer = { x: 0, y: 0 };
-let tour = null; // active camera animation
-let viewing = -1; // index of the artwork currently being viewed
 let started = false;
 
 const raycaster = new THREE.Raycaster();
 const pointerNdc = new THREE.Vector2();
 
-function pickArtwork(clientX, clientY) {
+function pickStop(clientX, clientY) {
   pointerNdc.set((clientX / window.innerWidth) * 2 - 1, -(clientY / window.innerHeight) * 2 + 1);
   raycaster.setFromCamera(pointerNdc, camera);
-  const hits = raycaster.intersectObjects(pieces.map((p) => p.canvas));
-  return hits.length ? hits[0].object.userData.index : -1;
+  const hits = raycaster.intersectObjects(clickable.concat(guide.children.filter((m) => m.userData.stop !== undefined)));
+  return hits.length ? hits[0].object.userData.stop : -1;
 }
 
 canvas.addEventListener('pointerdown', (e) => {
@@ -380,13 +833,13 @@ canvas.addEventListener('pointermove', (e) => {
     dragDistance += Math.abs(dx) + Math.abs(dy);
     lastPointer = { x: e.clientX, y: e.clientY };
     if (dragDistance > 4) {
-      tour = null;
+      flight = null;
       const sensitivity = e.pointerType === 'touch' ? 0.005 : 0.0035;
       look.yaw += dx * sensitivity;
       look.pitch = THREE.MathUtils.clamp(look.pitch + dy * sensitivity, -1.2, 1.2);
     }
-  } else {
-    canvas.classList.toggle('hovering', pickArtwork(e.clientX, e.clientY) !== -1);
+  } else if (e.pointerType === 'mouse') {
+    canvas.classList.toggle('hovering', pickStop(e.clientX, e.clientY) !== -1);
   }
 });
 
@@ -395,16 +848,18 @@ canvas.addEventListener('pointerup', (e) => {
   dragging = false;
   canvas.classList.remove('dragging');
   if (dragDistance <= 4) {
-    const index = pickArtwork(e.clientX, e.clientY);
-    if (index !== -1) viewArtwork(index);
+    const index = pickStop(e.clientX, e.clientY);
+    if (index !== -1) goTo(index);
   }
 });
 
 window.addEventListener('keydown', (e) => {
   if (!started) return;
-  if (e.key === 'Escape') closeInfo();
-  if (e.key === 'ArrowRight' && viewing !== -1) return viewArtwork((viewing + 1) % pieces.length);
-  if (e.key === 'ArrowLeft' && viewing !== -1) return viewArtwork((viewing + pieces.length - 1) % pieces.length);
+  if (e.key === 'Escape') { if (reader.classList.contains('open')) closeReader(); else hideTourBar(); }
+  if (current !== -1 && (e.key === 'ArrowRight' || e.key === 'ArrowLeft')) {
+    goTo(current + (e.key === 'ArrowRight' ? 1 : -1));
+    return;
+  }
   keys.add(e.code);
 });
 window.addEventListener('keyup', (e) => keys.delete(e.code));
@@ -419,61 +874,6 @@ document.querySelectorAll('#touch-move button').forEach((btn) => {
   btn.addEventListener('pointercancel', set(false));
 });
 
-function shortestAngle(from, to) {
-  return from + Math.atan2(Math.sin(to - from), Math.cos(to - from));
-}
-
-function viewArtwork(index) {
-  const piece = pieces[index];
-  // Step back far enough that the whole framed piece fits on narrow screens
-  const halfHFov = Math.atan(Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2) * camera.aspect);
-  const distance = Math.max(VIEW_DISTANCE, (piece.width * 0.6) / Math.tan(halfHFov));
-  const target = piece.group.position.clone().add(piece.normal.clone().multiplyScalar(distance));
-  target.y = EYE_HEIGHT;
-  // Yaw that makes the camera face the wall (looking along -normal)
-  const yaw = Math.atan2(piece.normal.x, piece.normal.z);
-  // Tilt slightly up so the artwork is centred in view
-  const pitch = Math.atan2(ART_CENTER_Y - EYE_HEIGHT, distance);
-  tour = {
-    t: 0,
-    duration: 1.3,
-    fromPos: camera.position.clone(),
-    toPos: target,
-    fromYaw: look.yaw,
-    toYaw: shortestAngle(look.yaw, yaw),
-    fromPitch: look.pitch,
-    toPitch: pitch,
-  };
-  openInfo(index);
-}
-
-// ---------------------------------------------------------------------------
-// Info panel
-// ---------------------------------------------------------------------------
-const info = document.getElementById('info');
-
-function openInfo(index) {
-  viewing = index;
-  const art = ARTWORKS[index];
-  document.getElementById('info-index').textContent = `No. ${index + 1} of ${ARTWORKS.length}`;
-  document.getElementById('info-title').textContent = art.title;
-  document.getElementById('info-artist').textContent = art.artist;
-  document.getElementById('info-year').textContent = art.year;
-  document.getElementById('info-desc').textContent = art.description;
-  info.classList.add('open');
-  info.setAttribute('aria-hidden', 'false');
-}
-
-function closeInfo() {
-  viewing = -1;
-  info.classList.remove('open');
-  info.setAttribute('aria-hidden', 'true');
-}
-
-document.getElementById('info-close').addEventListener('click', closeInfo);
-document.getElementById('info-next').addEventListener('click', () => viewArtwork((viewing + 1) % pieces.length));
-document.getElementById('info-prev').addEventListener('click', () => viewArtwork((viewing + pieces.length - 1) % pieces.length));
-
 // ---------------------------------------------------------------------------
 // Main loop
 // ---------------------------------------------------------------------------
@@ -481,19 +881,21 @@ const clock = new THREE.Clock();
 const forward = new THREE.Vector3();
 const right = new THREE.Vector3();
 const move = new THREE.Vector3();
+let elapsed = 0;
 
 function easeInOut(t) {
   return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 }
 
 function update(dt) {
-  if (tour) {
-    tour.t = Math.min(1, tour.t + dt / tour.duration);
-    const k = easeInOut(tour.t);
-    camera.position.lerpVectors(tour.fromPos, tour.toPos, k);
-    look.yaw = THREE.MathUtils.lerp(tour.fromYaw, tour.toYaw, k);
-    look.pitch = THREE.MathUtils.lerp(tour.fromPitch, tour.toPitch, k);
-    if (tour.t >= 1) tour = null;
+  elapsed += dt;
+  if (flight) {
+    flight.t = Math.min(1, flight.t + dt / flight.duration);
+    const k = easeInOut(flight.t);
+    camera.position.copy(pointOnPath(flight, k));
+    look.yaw = THREE.MathUtils.lerp(flight.fromYaw, flight.toYaw, k);
+    look.pitch = THREE.MathUtils.lerp(flight.fromPitch, flight.toPitch, k);
+    if (flight.t >= 1) flight = null;
   }
 
   forward.set(-Math.sin(look.yaw), 0, -Math.cos(look.yaw));
@@ -501,44 +903,26 @@ function update(dt) {
   move.set(0, 0, 0);
   if (keys.has('KeyW') || keys.has('ArrowUp') || touchMove.forward) move.add(forward);
   if (keys.has('KeyS') || keys.has('ArrowDown') || touchMove.back) move.sub(forward);
-  if (keys.has('KeyD') || (keys.has('ArrowRight') && viewing === -1)) move.add(right);
-  if (keys.has('KeyA') || (keys.has('ArrowLeft') && viewing === -1)) move.sub(right);
-
+  if (keys.has('KeyD') || keys.has('ArrowRight')) move.add(right);
+  if (keys.has('KeyA') || keys.has('ArrowLeft')) move.sub(right);
   if (move.lengthSq() > 0) {
-    tour = null;
-    if (viewing !== -1) closeInfo();
-    camera.position.addScaledVector(move.normalize(), WALK_SPEED * dt);
+    flight = null;
+    if (current !== -1) hideTourBar();
+    move.normalize().multiplyScalar(WALK_SPEED * dt);
+    tryMove(move.x, move.z);
   }
-
-  camera.position.x = THREE.MathUtils.clamp(camera.position.x, -HW + WALL_MARGIN, HW - WALL_MARGIN);
-  camera.position.z = THREE.MathUtils.clamp(camera.position.z, -HD + WALL_MARGIN, HD - WALL_MARGIN);
   camera.rotation.set(look.pitch, look.yaw, 0);
-}
 
-// Shift the rendered view so the artwork being viewed isn't hidden behind the
-// info panel (panel sits on the right on desktop, at the bottom on phones).
-const viewShift = { x: 0, y: 0 };
-function updateViewShift(dt) {
-  const w = window.innerWidth;
-  const h = window.innerHeight;
-  const narrow = w <= 600;
-  const tx = viewing !== -1 && !narrow ? Math.min(info.offsetWidth / 2 + 24, w * 0.25) : 0;
-  const ty = viewing !== -1 && narrow ? Math.min(info.offsetHeight / 2 + 16, h * 0.3) : 0;
-  const k = 1 - Math.exp(-dt * 6);
-  viewShift.x += (tx - viewShift.x) * k;
-  viewShift.y += (ty - viewShift.y) * k;
-  if (Math.abs(viewShift.x) < 0.5 && Math.abs(viewShift.y) < 0.5 && tx === 0 && ty === 0) {
-    if (camera.view && camera.view.enabled) camera.clearViewOffset();
-    viewShift.x = viewShift.y = 0;
-  } else {
-    camera.setViewOffset(w, h, viewShift.x, viewShift.y, w, h);
+  // Arrows pulse in a wave along the route, pointing the way forward
+  for (const a of arrows) {
+    const wave = Math.sin(elapsed * 3 - a.userData.phase * 1.1);
+    a.material.opacity = 0.3 + 0.6 * Math.max(0, wave) ** 2;
   }
 }
 
 function animate() {
   const dt = Math.min(clock.getDelta(), 0.05);
   update(dt);
-  updateViewShift(dt);
   renderer.render(scene, camera);
   requestAnimationFrame(animate);
 }
@@ -552,32 +936,42 @@ window.addEventListener('resize', () => {
 // Start
 // ---------------------------------------------------------------------------
 async function init() {
-  // Make sure the web fonts are ready before drawing text onto textures
   try {
     await Promise.race([
       Promise.all([
-        document.fonts.load('600 52px "Cormorant Garamond"'),
+        document.fonts.load(`600 52px "Cormorant Garamond"`),
+        document.fonts.load('italic 500 46px "Cormorant Garamond"'),
         document.fonts.load('500 44px Inter'),
       ]),
       new Promise((resolve) => setTimeout(resolve, 2500)),
     ]);
   } catch { /* fall back to system fonts */ }
 
-  buildRoom();
+  buildRooms();
   buildLights();
-  ARTWORKS.slice(0, PLACEMENTS.length).forEach(buildArtwork);
+  STOPS.forEach(buildStop);
+  buildFloorGuide();
   animate();
 
-  const enter = document.getElementById('enter');
-  enter.disabled = false;
-  enter.textContent = 'Enter Gallery';
-  enter.addEventListener('click', () => {
+  const begin = (tour) => {
     started = true;
     document.getElementById('intro').classList.add('hidden');
-    document.getElementById('hint').classList.add('visible');
     document.getElementById('touch-move').classList.add('visible');
-    setTimeout(() => document.getElementById('hint').classList.remove('visible'), 6000);
-  });
+    if (tour) {
+      goTo(0);
+    } else {
+      const hint = document.getElementById('hint');
+      hint.classList.add('visible');
+      setTimeout(() => hint.classList.remove('visible'), 7000);
+    }
+  };
+  const enter = document.getElementById('enter');
+  const tourBtn = document.getElementById('enter-tour');
+  enter.disabled = false;
+  tourBtn.disabled = false;
+  enter.textContent = 'Explore freely';
+  enter.addEventListener('click', () => begin(false));
+  tourBtn.addEventListener('click', () => begin(true));
 }
 
 init();
