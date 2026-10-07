@@ -1,5 +1,10 @@
-import * as THREE from 'three';
-import { ARTWORKS } from './artworks.js';
+// Runs as a classic script after vendor/three.min.js (global THREE) and
+// js/artworks.js (ARTWORKS), so the site has no outside dependencies.
+(function () {
+if (!window.THREE) {
+  galleryError('The 3D engine did not load. Please reload the page.');
+  return;
+}
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -29,13 +34,20 @@ const PLACEMENTS = [
 // Renderer, scene, camera
 // ---------------------------------------------------------------------------
 const canvas = document.getElementById('scene');
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+const isTouch = window.matchMedia('(pointer: coarse)').matches;
+let renderer;
+try {
+  renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+} catch (err) {
+  galleryError('This browser could not start 3D graphics (WebGL).');
+  return;
+}
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, isTouch ? 1.5 : 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.1;
-renderer.shadowMap.enabled = true;
+renderer.shadowMap.enabled = !isTouch;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
 const scene = new THREE.Scene();
@@ -542,9 +554,12 @@ window.addEventListener('resize', () => {
 async function init() {
   // Make sure the web fonts are ready before drawing text onto textures
   try {
-    await Promise.all([
-      document.fonts.load('600 52px "Cormorant Garamond"'),
-      document.fonts.load('500 44px Inter'),
+    await Promise.race([
+      Promise.all([
+        document.fonts.load('600 52px "Cormorant Garamond"'),
+        document.fonts.load('500 44px Inter'),
+      ]),
+      new Promise((resolve) => setTimeout(resolve, 2500)),
     ]);
   } catch { /* fall back to system fonts */ }
 
@@ -566,3 +581,4 @@ async function init() {
 }
 
 init();
+})();

@@ -1,7 +1,7 @@
 // Gallery content. To add your real artwork, drop the image files into
 // /images using the filenames below (or change `image` to match your files)
 // and fill in the text fields. Until an image exists, a placeholder is shown.
-export const ARTWORKS = [
+const ARTWORKS = [
   {
     title: 'Artwork One',
     artist: 'Artist name',

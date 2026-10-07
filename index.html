@@ -4,13 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
   <title>3D Art Gallery</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600&family=Inter:wght@400;500&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="css/style.css" />
-  <script type="importmap">
-    { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js" } }
-  </script>
 </head>
 <body>
   <canvas id="scene"></canvas>
@@ -48,6 +42,24 @@
     <button data-dir="back" aria-label="Walk back">&darr;</button>
   </div>
 
-  <script type="module" src="js/main.js"></script>
+  <script>
+  function galleryError(msg) {
+    var b = document.getElementById('enter');
+    if (b) { b.disabled = true; b.textContent = 'Sorry, the gallery could not start'; }
+    var p = document.querySelector('.intro-card .lead');
+    if (p) p.textContent = String(msg);
+  }
+  window.addEventListener('error', function (e) { galleryError(e.message || e); });
+  window.addEventListener('unhandledrejection', function (e) { galleryError(e.reason || 'Unknown error'); });
+  (function () {
+    var l = document.createElement('link');
+    l.rel = 'stylesheet';
+    l.href = 'https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600&family=Inter:wght@400;500&display=swap';
+    document.head.appendChild(l);
+  })();
+  </script>
+  <script src="vendor/three.min.js"></script>
+  <script src="js/artworks.js"></script>
+  <script src="js/main.js"></script>
 </body>
 </html>
