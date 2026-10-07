@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+  <title>3D Art Gallery</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600&family=Inter:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/style.css" />
+  <script type="importmap">
+    { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js" } }
+  </script>
+</head>
+<body>
+  <canvas id="scene"></canvas>
+
+  <div id="intro" class="overlay">
+    <div class="intro-card">
+      <p class="eyebrow">Virtual Exhibition</p>
+      <h1>The Gallery</h1>
+      <p class="lead">Walk through the room and click any artwork to take a closer look.</p>
+      <ul class="controls-help">
+        <li><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> or arrow keys to walk</li>
+        <li>Drag to look around</li>
+        <li>Click an artwork to view it</li>
+      </ul>
+      <button id="enter" class="btn-primary" disabled>Loading…</button>
+    </div>
+  </div>
+
+  <aside id="info" class="info" aria-hidden="true">
+    <button id="info-close" class="icon-btn close" aria-label="Close">&times;</button>
+    <p class="eyebrow" id="info-index"></p>
+    <h2 id="info-title"></h2>
+    <p class="meta"><span id="info-artist"></span> · <span id="info-year"></span></p>
+    <p id="info-desc"></p>
+    <div class="info-nav">
+      <button id="info-prev" class="btn-ghost">&larr; Previous</button>
+      <button id="info-next" class="btn-ghost">Next &rarr;</button>
+    </div>
+  </aside>
+
+  <div id="hint" class="hint">Click an artwork to view · Drag to look · WASD to walk</div>
+
+  <div id="touch-move" class="touch-move">
+    <button data-dir="forward" aria-label="Walk forward">&uarr;</button>
+    <button data-dir="back" aria-label="Walk back">&darr;</button>
+  </div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
