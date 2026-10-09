@@ -27,9 +27,11 @@ const ART_MAX = { w: 2.6, h: 2.4 };
 const ART_CENTER_Y = 2.2;
 const FRAME = 0.1;
 const MATBOARD = 0.16;
-const LABEL_W = 1.5; // wall label beside each artwork
+const LABEL_W = 1.8; // wall label beside each artwork
 const LABEL_GAP = 0.35;
-const TEXT_PANEL_W = 2.6; // intro / closing panels
+const TEXT_PANEL_W = 3.0; // intro / closing panels
+// Panel text is drawn above 1x for sharpness (a little less on touch devices to save memory)
+const TEXT_SCALE = window.matchMedia('(pointer: coarse)').matches ? 1.5 : 2;
 const STATION_DIST = 2.8; // floor marker distance from the wall
 const START = new THREE.Vector3(0, EYE_HEIGHT, -6.5);
 const START_YAW = Math.PI; // facing the intro panel on the entrance wall
@@ -181,7 +183,7 @@ function wrapLines(ctx, text, maxW) {
 
 // Lays out blocks of text on a panel-sized canvas. Each block is
 // { text, font, color, lh, gap } or { rule: true, gap }.
-function textPanelCanvas(blocks, widthPx, { pad = 72, bg = '#f7f4ee', accent = '#8a5a2b' } = {}) {
+function textPanelCanvas(blocks, widthPx, { pad = 72, bg = '#fbf8f2', accent = '#7a4a1c' } = {}) {
   const maxW = widthPx - pad * 2;
   const measure = makeCanvas(8, 8).getContext('2d');
   let height = pad;
@@ -199,17 +201,18 @@ function textPanelCanvas(blocks, widthPx, { pad = 72, bg = '#f7f4ee', accent = '
   });
   height += pad - 10;
 
-  const c = makeCanvas(widthPx, Math.ceil(height));
+  const c = makeCanvas(widthPx * TEXT_SCALE, Math.ceil(height) * TEXT_SCALE);
   const ctx = c.getContext('2d');
+  ctx.scale(TEXT_SCALE, TEXT_SCALE);
   ctx.fillStyle = bg;
-  ctx.fillRect(0, 0, c.width, c.height);
+  ctx.fillRect(0, 0, widthPx, height);
   ctx.fillStyle = accent;
-  ctx.fillRect(0, 0, c.width, 10);
+  ctx.fillRect(0, 0, widthPx, 12);
   ctx.textBaseline = 'top';
   for (const item of laid) {
     if (item.rule) {
-      ctx.fillStyle = '#d6cbbb';
-      ctx.fillRect(pad, item.y, 120, 4);
+      ctx.fillStyle = accent;
+      ctx.fillRect(pad, item.y, 120, 5);
       continue;
     }
     ctx.font = item.font;
@@ -222,25 +225,25 @@ function textPanelCanvas(blocks, widthPx, { pad = 72, bg = '#f7f4ee', accent = '
 function labelBlocks(stop, number) {
   const meta = [stop.artist, stop.date].filter(Boolean).join(', ');
   return [
-    { text: `NO. ${number}  ·  ${EXHIBITION.rooms[stop.room].toUpperCase()}`, font: `600 24px ${SANS}`, color: '#8a5a2b', lh: 34, gap: 18 },
-    { text: stop.title, font: `600 66px ${SERIF}`, color: '#1d1a16', lh: 68, gap: 18 },
-    { text: meta, font: `500 30px ${SANS}`, color: '#4a4239', lh: 40, gap: 6 },
-    { text: stop.medium, font: `400 24px ${SANS}`, color: '#7a7064', lh: 33, gap: 30 },
+    { text: `NO. ${number}  ·  ${EXHIBITION.rooms[stop.room].toUpperCase()}`, font: `700 26px ${SANS}`, color: '#7a4a1c', lh: 36, gap: 20 },
+    { text: stop.title, font: `700 70px ${SERIF}`, color: '#14110e', lh: 74, gap: 20 },
+    { text: meta, font: `600 32px ${SANS}`, color: '#2b2520', lh: 42, gap: 8 },
+    { text: stop.medium, font: `500 26px ${SANS}`, color: '#4d453c', lh: 36, gap: 30 },
     { rule: true, gap: 30 },
-    { text: stop.description, font: `400 31px ${SANS}`, color: '#2a251f', lh: 46, gap: 30 },
-    { text: `Source: ${stop.source}`, font: `400 21px ${SANS}`, color: '#7a7064', lh: 30, gap: 0 },
+    { text: stop.description, font: `500 35px ${SANS}`, color: '#14110e', lh: 52, gap: 32 },
+    { text: `Source: ${stop.source}`, font: `500 23px ${SANS}`, color: '#4d453c', lh: 33, gap: 0 },
   ];
 }
 
 function textStopBlocks(stop) {
   const blocks = [
-    { text: stop.eyebrow.toUpperCase(), font: `600 26px ${SANS}`, color: '#8a5a2b', lh: 36, gap: 14 },
-    { text: stop.title, font: `600 92px ${SERIF}`, color: '#1d1a16', lh: 92, gap: 26 },
+    { text: stop.eyebrow.toUpperCase(), font: `700 28px ${SANS}`, color: '#7a4a1c', lh: 38, gap: 16 },
+    { text: stop.title, font: `700 96px ${SERIF}`, color: '#14110e', lh: 98, gap: 26 },
   ];
-  if (stop.subtitle) blocks.push({ text: stop.subtitle, font: `italic 500 46px ${SERIF}`, color: '#4a4239', lh: 54, gap: 34 });
+  if (stop.subtitle) blocks.push({ text: stop.subtitle, font: `italic 600 50px ${SERIF}`, color: '#2b2520', lh: 60, gap: 34 });
   blocks.push({ rule: true, gap: 34 });
-  stop.body.forEach((p) => blocks.push({ text: p, font: `400 32px ${SANS}`, color: '#2a251f', lh: 48, gap: 26 }));
-  blocks.push({ text: `Source: ${stop.source}`, font: `400 22px ${SANS}`, color: '#7a7064', lh: 32, gap: 0 });
+  stop.body.forEach((p) => blocks.push({ text: p, font: `500 38px ${SANS}`, color: '#14110e', lh: 56, gap: 28 }));
+  blocks.push({ text: `Source: ${stop.source}`, font: `500 25px ${SANS}`, color: '#4d453c', lh: 36, gap: 0 });
   return blocks;
 }
 
@@ -426,7 +429,8 @@ function addPanelMesh(group, canvasEl, widthM, x, y, index) {
   group.add(backing);
   const panel = new THREE.Mesh(
     new THREE.PlaneGeometry(widthM, heightM),
-    new THREE.MeshStandardMaterial({ map: toTexture(canvasEl), roughness: 0.9 }),
+    // Unlit so the spotlights never wash out or dim the text
+    new THREE.MeshBasicMaterial({ map: toTexture(canvasEl), toneMapped: false }),
   );
   panel.position.set(x, y, 0.042);
   panel.userData.stop = index;
