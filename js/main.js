@@ -45,7 +45,7 @@ const STOP_LAYOUT = [
   { wall: 'right', along: -12.5 },
   { wall: 'left', along: -20.5 },  // Gallery II
   { wall: 'right', along: -23.0 },
-  { wall: 'back', along: 0 },      // closing panel
+  { wall: 'back', along: 0, width: 4.6 }, // closing panel (wider: it has more text)
 ];
 
 const BENCHES = [
@@ -243,6 +243,7 @@ function textStopBlocks(stop) {
     { text: stop.eyebrow.toUpperCase(), font: `800 28px ${SANS}`, color: '#6b3d12', lh: 38, gap: 16 },
     { text: stop.title, font: `700 88px ${PANEL_SERIF}`, color: INK, lh: 98, gap: 26 },
   ];
+  if (stop.subtitleLabel) blocks.push({ text: stop.subtitleLabel.toUpperCase(), font: `800 26px ${SANS}`, color: '#6b3d12', lh: 36, gap: 8 });
   if (stop.subtitle) blocks.push({ text: stop.subtitle, font: `italic 700 46px ${PANEL_SERIF}`, color: '#1a1512', lh: 60, gap: 34 });
   blocks.push({ rule: true, gap: 34 });
   stop.body.forEach((p) => blocks.push({ text: p, font: `600 38px ${SANS}`, color: INK, lh: 56, gap: 28 }));
@@ -495,11 +496,13 @@ function buildStop(stop, index) {
   stops.push(s);
 
   if (stop.type === 'text') {
-    const c = textPanelCanvas(textStopBlocks(stop), 1200, { pad: 90 });
-    const heightM = TEXT_PANEL_W * (c.height / c.width);
+    const widthM = layout.width || TEXT_PANEL_W;
+    const c = textPanelCanvas(textStopBlocks(stop), Math.round(widthM * 400), { pad: 90 });
+    const heightM = widthM * (c.height / c.width);
     const y = Math.max(2.5, heightM / 2 + 0.5);
-    addPanelMesh(group, c, TEXT_PANEL_W, 0, y, index);
-    s.unitWidth = TEXT_PANEL_W;
+    addPanelMesh(group, c, widthM, 0, y, index);
+    s.unitWidth = widthM;
+    s.panelH = heightM;
     s.unitCenterX = 0;
     s.focusY = y;
     refreshFocus(s);
@@ -691,7 +694,7 @@ function roomOf(z) {
 function viewPoint(s) {
   const halfHFov = Math.atan(Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2) * camera.aspect);
   const halfVFov = THREE.MathUtils.degToRad(camera.fov) / 2;
-  const tall = s.stop.type === 'text' ? 3.4 : 3.2;
+  const tall = s.stop.type === 'text' ? Math.max(3.4, s.panelH + 0.5) : 3.2;
   let dist = Math.max((s.unitWidth * 0.62) / Math.tan(halfHFov), (tall * 0.62) / Math.tan(halfVFov), 3.2);
   dist = Math.min(dist, HW * 2 - 1.2);
   const p = s.focus.clone().add(s.normal.clone().multiplyScalar(dist));
@@ -775,7 +778,9 @@ function fillReader(index) {
     ? `No. ${stops[index].number} · ${EXHIBITION.rooms[st.room]}`
     : st.eyebrow;
   document.getElementById('reader-title').textContent = st.title;
-  const meta = st.type === 'art' ? [st.artist, st.date].filter(Boolean).join(', ') : st.subtitle;
+  const meta = st.type === 'art'
+    ? [st.artist, st.date].filter(Boolean).join(', ')
+    : [st.subtitleLabel, st.subtitle].filter(Boolean).join(' ');
   document.getElementById('reader-meta').textContent = meta || '';
   document.getElementById('reader-medium').textContent = st.type === 'art' ? st.medium : '';
   const body = document.getElementById('reader-body');
