@@ -247,7 +247,7 @@ function textStopBlocks(stop) {
   if (stop.subtitle) blocks.push({ text: stop.subtitle, font: `italic 700 46px ${PANEL_SERIF}`, color: '#1a1512', lh: 60, gap: 34 });
   blocks.push({ rule: true, gap: 34 });
   stop.body.forEach((p) => blocks.push({ text: p, font: `600 38px ${SANS}`, color: INK, lh: 56, gap: 28 }));
-  blocks.push({ text: `Source: ${stop.source}`, font: `600 25px ${SANS}`, color: '#2a2420', lh: 36, gap: 0 });
+  if (stop.source) blocks.push({ text: `Source: ${stop.source}`, font: `600 25px ${SANS}`, color: '#2a2420', lh: 36, gap: 0 });
   return blocks;
 }
 
@@ -790,7 +790,7 @@ function fillReader(index) {
     p.textContent = t;
     body.appendChild(p);
   });
-  document.getElementById('reader-source').textContent = `Source: ${st.source}`;
+  document.getElementById('reader-source').textContent = st.source ? `Source: ${st.source}` : '';
 }
 
 function openReader() {

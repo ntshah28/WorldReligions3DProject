@@ -17,11 +17,9 @@ const STOPS = [
     subtitleLabel: 'Research Question:',
     subtitle: 'What is most misunderstood or overlooked about Native American religions?',
     body: [
-      'There is heavy diversity in Native American religions and traditions. There have been over 300 Native languages.',
-      'Unlike some other religions, there is an emphasis placed on actively participating in religion; arguments around religious truth and theory are less prevalent.',
+      'This exhibition explores the question through five artworks and artifacts, in two galleries.',
       'Follow the arrows on the floor. Gallery I looks at spirit and ceremony; Gallery II looks at traditional healing.',
     ],
-    source: '“Native American religions.” Britannica Academic, Encyclopædia Britannica, 20 Dec. 2021.',
   },
   {
     type: 'art',
@@ -91,9 +89,10 @@ const STOPS = [
     subtitleLabel: 'Research Question:',
     subtitle: 'What is most misunderstood or overlooked about Native American religions?',
     body: [
-      'The most overlooked fact is that there is no single “Native American religion.” There are hundreds of different traditions, shaped by over 300 Native languages, from the Katsina spirits of the Pueblo religion to the Meskwaki and Ho-Chunk religions of the Iowa tribe.',
-      'These religions are often misunderstood as a set of beliefs to argue about. Instead, they focus on actively participating, through ceremonies like sun worship and healing practices like those of the medicine men in Gallery II.',
-      'They are also not frozen in the past. “Indigenous” has no single definition, these religions have developed immensely over the centuries, and language, including English, is still key to them today. Some, like the religion of the Iowa tribe, are now at risk of disappearing.',
+      'There is heavy diversity in Native American religions and traditions. There have been over 300 Native languages.',
+      'In addition, unlike some other religions, there is an emphasis placed on actively participating in religion; arguments around religious truth and theory are less prevalent.',
+      'Indigenous itself has no clear definition and varies largely based on location around the world.',
+      'The religions have immensely developed over the past centuries due to a variety of factors. Language, including English, is key to Native religions.',
     ],
     source: '“Native American religions.” Britannica Academic, 20 Dec. 2021; Alles, Gregory D. “The Study of Indigenous Religions.” Oxford Research Encyclopedia of Religion, 24 May 2023.',
   },
