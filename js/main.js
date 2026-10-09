@@ -104,6 +104,9 @@ camera.position.copy(START);
 // Canvas textures
 // ---------------------------------------------------------------------------
 const SERIF = '"Cormorant Garamond", Georgia, "Times New Roman", serif';
+// Wall panels use a sturdier serif so titles stay bold and readable at a distance
+const PANEL_SERIF = 'Georgia, "Times New Roman", serif';
+const INK = '#000000';
 const SANS = 'Inter, "Helvetica Neue", Arial, sans-serif';
 
 function makeCanvas(w, h) {
@@ -183,7 +186,7 @@ function wrapLines(ctx, text, maxW) {
 
 // Lays out blocks of text on a panel-sized canvas. Each block is
 // { text, font, color, lh, gap } or { rule: true, gap }.
-function textPanelCanvas(blocks, widthPx, { pad = 72, bg = '#fbf8f2', accent = '#7a4a1c' } = {}) {
+function textPanelCanvas(blocks, widthPx, { pad = 72, bg = '#ece4d6', accent = '#6b3d12' } = {}) {
   const maxW = widthPx - pad * 2;
   const measure = makeCanvas(8, 8).getContext('2d');
   let height = pad;
@@ -225,25 +228,25 @@ function textPanelCanvas(blocks, widthPx, { pad = 72, bg = '#fbf8f2', accent = '
 function labelBlocks(stop, number) {
   const meta = [stop.artist, stop.date].filter(Boolean).join(', ');
   return [
-    { text: `NO. ${number}  ·  ${EXHIBITION.rooms[stop.room].toUpperCase()}`, font: `700 26px ${SANS}`, color: '#7a4a1c', lh: 36, gap: 20 },
-    { text: stop.title, font: `700 70px ${SERIF}`, color: '#14110e', lh: 74, gap: 20 },
-    { text: meta, font: `600 32px ${SANS}`, color: '#2b2520', lh: 42, gap: 8 },
-    { text: stop.medium, font: `500 26px ${SANS}`, color: '#4d453c', lh: 36, gap: 30 },
+    { text: `NO. ${number}  ·  ${EXHIBITION.rooms[stop.room].toUpperCase()}`, font: `800 26px ${SANS}`, color: '#6b3d12', lh: 36, gap: 20 },
+    { text: stop.title, font: `700 64px ${PANEL_SERIF}`, color: INK, lh: 74, gap: 20 },
+    { text: meta, font: `700 32px ${SANS}`, color: INK, lh: 42, gap: 8 },
+    { text: stop.medium, font: `600 26px ${SANS}`, color: '#2a2420', lh: 36, gap: 30 },
     { rule: true, gap: 30 },
-    { text: stop.description, font: `500 35px ${SANS}`, color: '#14110e', lh: 52, gap: 32 },
-    { text: `Source: ${stop.source}`, font: `500 23px ${SANS}`, color: '#4d453c', lh: 33, gap: 0 },
+    { text: stop.description, font: `600 35px ${SANS}`, color: INK, lh: 52, gap: 32 },
+    { text: `Source: ${stop.source}`, font: `600 23px ${SANS}`, color: '#2a2420', lh: 33, gap: 0 },
   ];
 }
 
 function textStopBlocks(stop) {
   const blocks = [
-    { text: stop.eyebrow.toUpperCase(), font: `700 28px ${SANS}`, color: '#7a4a1c', lh: 38, gap: 16 },
-    { text: stop.title, font: `700 96px ${SERIF}`, color: '#14110e', lh: 98, gap: 26 },
+    { text: stop.eyebrow.toUpperCase(), font: `800 28px ${SANS}`, color: '#6b3d12', lh: 38, gap: 16 },
+    { text: stop.title, font: `700 88px ${PANEL_SERIF}`, color: INK, lh: 98, gap: 26 },
   ];
-  if (stop.subtitle) blocks.push({ text: stop.subtitle, font: `italic 600 50px ${SERIF}`, color: '#2b2520', lh: 60, gap: 34 });
+  if (stop.subtitle) blocks.push({ text: stop.subtitle, font: `italic 700 46px ${PANEL_SERIF}`, color: '#1a1512', lh: 60, gap: 34 });
   blocks.push({ rule: true, gap: 34 });
-  stop.body.forEach((p) => blocks.push({ text: p, font: `500 38px ${SANS}`, color: '#14110e', lh: 56, gap: 28 }));
-  blocks.push({ text: `Source: ${stop.source}`, font: `500 25px ${SANS}`, color: '#4d453c', lh: 36, gap: 0 });
+  stop.body.forEach((p) => blocks.push({ text: p, font: `600 38px ${SANS}`, color: INK, lh: 56, gap: 28 }));
+  blocks.push({ text: `Source: ${stop.source}`, font: `600 25px ${SANS}`, color: '#2a2420', lh: 36, gap: 0 });
   return blocks;
 }
 
@@ -440,7 +443,7 @@ function addPanelMesh(group, canvasEl, widthM, x, y, index) {
 }
 
 function addSpot(target, normal, angle) {
-  const light = new THREE.SpotLight(0xfff1dc, 55, 0, angle, 0.6, 1.4);
+  const light = new THREE.SpotLight(0xfff1dc, 32, 0, angle, 0.7, 1.4);
   light.position.copy(target).add(normal.clone().multiplyScalar(2.6));
   light.position.y = WALL_H - 0.2;
   light.target.position.copy(target);
@@ -476,7 +479,9 @@ function updateArtUnit(s, aspect) {
 function refreshFocus(s) {
   s.group.updateMatrixWorld(true);
   s.focus = new THREE.Vector3(s.unitCenterX, ART_CENTER_Y, 0).applyMatrix4(s.group.matrixWorld);
-  if (s.light) s.light.target.position.copy(s.focus);
+  // Light the artwork itself, not the label beside it
+  s.artCenter = new THREE.Vector3(0, ART_CENTER_Y, 0).applyMatrix4(s.group.matrixWorld);
+  if (s.light) s.light.target.position.copy(s.stop.type === 'art' ? s.artCenter : s.focus);
 }
 
 function buildStop(stop, index) {
@@ -499,7 +504,8 @@ function buildStop(stop, index) {
     s.focusY = y;
     refreshFocus(s);
     s.focus.y = y;
-    s.light = addSpot(s.focus, normal, 0.5);
+    s.light = addSpot(s.focus, normal, 0.45);
+    s.light.intensity = 14;
     return;
   }
 
@@ -527,7 +533,7 @@ function buildStop(stop, index) {
 
   Object.assign(s, { frame, mat, canvasMesh, label: labelGroup, labelH: heightM });
   updateArtUnit(s, 3 / 4);
-  s.light = addSpot(s.focus, normal, 0.62);
+  s.light = addSpot(s.artCenter, normal, 0.48);
 
   new THREE.TextureLoader().load(
     stop.image,
@@ -946,6 +952,9 @@ async function init() {
         document.fonts.load(`600 52px "Cormorant Garamond"`),
         document.fonts.load('italic 500 46px "Cormorant Garamond"'),
         document.fonts.load('500 44px Inter'),
+        document.fonts.load('600 35px Inter'),
+        document.fonts.load('700 32px Inter'),
+        document.fonts.load('800 26px Inter'),
       ]),
       new Promise((resolve) => setTimeout(resolve, 2500)),
     ]);
