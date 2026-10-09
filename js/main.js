@@ -248,6 +248,12 @@ function textStopBlocks(stop) {
   blocks.push({ rule: true, gap: 34 });
   stop.body.forEach((p) => blocks.push({ text: p, font: `600 38px ${SANS}`, color: INK, lh: 56, gap: 28 }));
   if (stop.source) blocks.push({ text: `Source: ${stop.source}`, font: `600 25px ${SANS}`, color: '#2a2420', lh: 36, gap: 0 });
+  if (stop.worksCited) {
+    blocks.push({ text: 'WORKS CITED', font: `800 24px ${SANS}`, color: '#6b3d12', lh: 34, gap: 10 });
+    stop.worksCited.forEach((c, i) => blocks.push({
+      text: c, font: `600 24px ${SANS}`, color: '#2a2420', lh: 34, gap: i === stop.worksCited.length - 1 ? 0 : 12,
+    }));
+  }
   return blocks;
 }
 
@@ -790,7 +796,9 @@ function fillReader(index) {
     p.textContent = t;
     body.appendChild(p);
   });
-  document.getElementById('reader-source').textContent = st.source ? `Source: ${st.source}` : '';
+  document.getElementById('reader-source').textContent = st.worksCited
+    ? `Works Cited\n\n${st.worksCited.join('\n\n')}`
+    : st.source ? `Source: ${st.source}` : '';
 }
 
 function openReader() {

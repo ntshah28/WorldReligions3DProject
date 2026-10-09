@@ -94,6 +94,9 @@ const STOPS = [
       'Indigenous itself has no clear definition and varies largely based on location around the world.',
       'The religions have immensely developed over the past centuries due to a variety of factors. Language, including English, is key to Native religions.',
     ],
-    source: '“Native American religions.” Britannica Academic, 20 Dec. 2021; Alles, Gregory D. “The Study of Indigenous Religions.” Oxford Research Encyclopedia of Religion, 24 May 2023.',
+    worksCited: [
+      '“Native American Religions.” Britannica Academic, Encyclopædia Britannica, 20 Dec. 2021, academic.eb.com/levels/collegiate/article/Native-American-religions/389480. Accessed 5 Oct. 2026.',
+      'Alles, Gregory D. “The Study of Indigenous Religions.” Oxford Research Encyclopedia of Religion, edited by John Barton, Oxford UP, 24 May 2023, doi.org/10.1093/acrefore/9780199340378.013.1129. Accessed 5 Oct. 2026.',
+    ],
   },
 ];

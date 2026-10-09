@@ -188,7 +188,7 @@ kbd {
 .reader .meta { margin: 0 0 2px; font-size: 15px; font-weight: 500; color: #2b2520; }
 .reader .medium { margin: 0 0 16px; font-size: 14px; color: #4d453c; }
 #reader-body p { margin: 0 0 14px; line-height: 1.65; font-size: 17px; color: #1d1a16; }
-.reader .source { margin: 16px 0 0; font-size: 13px; color: #4d453c; line-height: 1.5; }
+.reader .source { margin: 16px 0 0; font-size: 13px; color: #4d453c; line-height: 1.5; white-space: pre-line; overflow-wrap: anywhere; }
 
 .icon-btn {
   border: 0;
