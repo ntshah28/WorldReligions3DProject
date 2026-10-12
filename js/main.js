@@ -45,7 +45,7 @@ const STOP_LAYOUT = [
   { wall: 'right', along: -12.5 },
   { wall: 'left', along: -20.5 },  // Gallery II
   { wall: 'right', along: -23.0 },
-  { wall: 'back', along: 0, width: 4.6 }, // closing panel (wider: it has more text)
+  { wall: 'back', along: 0, width: 7.2 }, // closing panel (wide, two columns of text)
 ];
 
 const BENCHES = [
@@ -186,27 +186,52 @@ function wrapLines(ctx, text, maxW) {
 
 // Lays out blocks of text on a panel-sized canvas. Each block is
 // { text, font, color, lh, gap } or { rule: true, gap }.
-function textPanelCanvas(blocks, widthPx, { pad = 72, bg = '#ece4d6', accent = '#6b3d12' } = {}) {
-  const maxW = widthPx - pad * 2;
+// Lays out blocks of text on a panel-sized canvas. Each block is
+// { text, font, color, lh, gap } or { rule: true, gap }. Blocks flagged
+// `col: true` flow into `columns` side-by-side columns; blocks before and
+// after them span the full width.
+function textPanelCanvas(blocks, widthPx, { pad = 72, bg = '#ece4d6', accent = '#6b3d12', columns = 1, gutter = 70 } = {}) {
+  const fullW = widthPx - pad * 2;
+  const colW = (fullW - gutter * (columns - 1)) / columns;
   const measure = makeCanvas(8, 8).getContext('2d');
-  let height = pad;
-  const laid = blocks.map((b) => {
-    if (b.rule) {
-      const item = { rule: true, y: height };
-      height += 4 + (b.gap || 0);
-      return item;
-    }
+  const sized = blocks.map((b) => {
+    if (b.rule) return { ...b, h: 5 + (b.gap || 0) };
     measure.font = b.font;
-    const lines = wrapLines(measure, b.text, maxW);
-    const item = { ...b, lines, y: height };
-    height += lines.length * b.lh + (b.gap || 0);
-    return item;
+    const lines = wrapLines(measure, b.text, b.col && columns > 1 ? colW : fullW);
+    return { ...b, lines, h: lines.length * b.lh + (b.gap || 0) };
   });
-  height += pad - 10;
 
-  const c = makeCanvas(widthPx * TEXT_SCALE, Math.ceil(height) * TEXT_SCALE);
+  let y = pad;
+  const laid = [];
+  let i = 0;
+  // full-width head
+  for (; i < sized.length && !sized[i].col; i++) { laid.push({ ...sized[i], x: pad, y }); y += sized[i].h; }
+  // columns
+  const body = [];
+  for (; i < sized.length && sized[i].col; i++) body.push(sized[i]);
+  if (body.length) {
+    const total = body.reduce((t, b) => t + b.h, 0);
+    const target = total / columns;
+    let col = 0;
+    let colY = 0;
+    let maxY = 0;
+    for (const b of body) {
+      if (col < columns - 1 && colY > 0 && colY + b.h / 2 > target) { col++; colY = 0; }
+      laid.push({ ...b, x: pad + col * (colW + gutter), y: y + colY });
+      colY += b.h;
+      maxY = Math.max(maxY, colY);
+    }
+    y += maxY + 10;
+  }
+  // full-width foot
+  for (; i < sized.length; i++) { laid.push({ ...sized[i], x: pad, y }); y += sized[i].h; }
+  const height = y + pad - 10;
+
+  // Stay under common GPU texture limits on wide panels
+  const scale = Math.min(TEXT_SCALE, 4096 / widthPx, 4096 / height);
+  const c = makeCanvas(Math.round(widthPx * scale), Math.round(height * scale));
   const ctx = c.getContext('2d');
-  ctx.scale(TEXT_SCALE, TEXT_SCALE);
+  ctx.scale(scale, scale);
   ctx.fillStyle = bg;
   ctx.fillRect(0, 0, widthPx, height);
   ctx.fillStyle = accent;
@@ -215,12 +240,12 @@ function textPanelCanvas(blocks, widthPx, { pad = 72, bg = '#ece4d6', accent = '
   for (const item of laid) {
     if (item.rule) {
       ctx.fillStyle = accent;
-      ctx.fillRect(pad, item.y, 120, 5);
+      ctx.fillRect(item.x, item.y, 120, 5);
       continue;
     }
     ctx.font = item.font;
     ctx.fillStyle = item.color;
-    item.lines.forEach((line, i) => ctx.fillText(line, pad, item.y + i * item.lh));
+    item.lines.forEach((line, n) => ctx.fillText(line, item.x, item.y + n * item.lh));
   }
   return c;
 }
@@ -246,9 +271,13 @@ function textStopBlocks(stop) {
   if (stop.subtitleLabel) blocks.push({ text: stop.subtitleLabel.toUpperCase(), font: `800 26px ${SANS}`, color: '#6b3d12', lh: 36, gap: 8 });
   if (stop.subtitle) blocks.push({ text: stop.subtitle, font: `italic 700 46px ${PANEL_SERIF}`, color: '#1a1512', lh: 60, gap: 34 });
   blocks.push({ rule: true, gap: 34 });
-  stop.body.forEach((p) => blocks.push({ text: p, font: `600 38px ${SANS}`, color: INK, lh: 56, gap: 28 }));
+  const cols = (stop.columns || 1) > 1;
+  stop.body.forEach((p) => blocks.push(cols
+    ? { text: p, font: `600 33px ${SANS}`, color: INK, lh: 49, gap: 24, col: true }
+    : { text: p, font: `600 38px ${SANS}`, color: INK, lh: 56, gap: 28 }));
   if (stop.source) blocks.push({ text: `Source: ${stop.source}`, font: `600 25px ${SANS}`, color: '#2a2420', lh: 36, gap: 0 });
   if (stop.worksCited) {
+    blocks.push({ rule: true, gap: 22 });
     blocks.push({ text: 'WORKS CITED', font: `800 24px ${SANS}`, color: '#6b3d12', lh: 34, gap: 10 });
     stop.worksCited.forEach((c, i) => blocks.push({
       text: c, font: `600 24px ${SANS}`, color: '#2a2420', lh: 34, gap: i === stop.worksCited.length - 1 ? 0 : 12,
@@ -370,10 +399,10 @@ function buildRooms() {
   // Room title on the entrance wall area of Gallery I is the intro panel;
   // Gallery II gets a title sign above the closing panel.
   const g2 = new THREE.Mesh(
-    new THREE.PlaneGeometry(4.4, 1.1),
+    new THREE.PlaneGeometry(3.4, 0.85),
     new THREE.MeshStandardMaterial({ map: toTexture(signCanvas(['GALLERY II', 'Traditional Healing'])), roughness: 0.8 }),
   );
-  g2.position.set(0, WALL_H - 0.75, BACK_Z + 0.02);
+  g2.position.set(0, WALL_H - 0.5, BACK_Z + 0.02);
   scene.add(g2);
 
   // Skylights
@@ -503,9 +532,13 @@ function buildStop(stop, index) {
 
   if (stop.type === 'text') {
     const widthM = layout.width || TEXT_PANEL_W;
-    const c = textPanelCanvas(textStopBlocks(stop), Math.round(widthM * 400), { pad: 90 });
+    const c = textPanelCanvas(textStopBlocks(stop), Math.min(Math.round(widthM * 400), 2400), {
+      pad: 90,
+      columns: stop.columns || 1,
+    });
     const heightM = widthM * (c.height / c.width);
-    const y = Math.max(2.5, heightM / 2 + 0.5);
+    // Sit at eye level, but keep the top below the room sign on the back wall
+    const y = Math.min(Math.max(2.5, heightM / 2 + 0.5), 4.5 - heightM / 2);
     addPanelMesh(group, c, widthM, 0, y, index);
     s.unitWidth = widthM;
     s.panelH = heightM;

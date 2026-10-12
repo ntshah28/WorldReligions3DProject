@@ -88,11 +88,13 @@ const STOPS = [
     title: 'Response to the Research Question',
     subtitleLabel: 'Research Question:',
     subtitle: 'What is most misunderstood or overlooked about Native American religions?',
+    columns: 2,
     body: [
-      'There is heavy diversity in Native American religions and traditions. There have been over 300 Native languages.',
-      'In addition, unlike some other religions, there is an emphasis placed on actively participating in religion; arguments around religious truth and theory are less prevalent.',
-      'Indigenous itself has no clear definition and varies largely based on location around the world.',
-      'The religions have immensely developed over the past centuries due to a variety of factors. Language, including English, is key to Native religions.',
+      'Considering these pieces of art together reveals strong insight into this question. All of these artworks are quite diverse, in location, medium, images and more. Some are from South American tribes, while others are from American states. In addition, each artwork has a different medium ranging from watercolor to sculpture. This further reinforces the idea that diversity is a defining characteristic of Native religions.',
+      'Often, it is easy to group Native religions into one bucket, but it is important to distinguish between them while also recognizing their similarities. This is one often overlooked aspect to Native religions.',
+      'It is important, also, to consider the similarities between some of these pieces. Many of them picture healing traditions, signaling the importance of physical and spiritual healing in Native religions.',
+      'Additionally, many of these religions face vastly different futures. Although it is well known that the time of European colonialism in the Americas led to the extinction of many Native tribes, those threats are still faced today for many different tribes. The Iowa Indigenous tribe, pictured in the last artwork, is currently at threat of extinction. Indigenous itself has no clear definition and varies largely based on location around the world.',
+      'Synthesizing this information reveals that there is no one way to think about Native Religions, as they possess great diversity and unique traditions, a fact often overlooked.',
     ],
     worksCited: [
       '“Native American Religions.” Britannica Academic, Encyclopædia Britannica, 20 Dec. 2021, academic.eb.com/levels/collegiate/article/Native-American-religions/389480. Accessed 5 Oct. 2026.',
